@@ -8,7 +8,7 @@ This is a local development version of AIGoat that runs entirely on your local m
 - **Backend**: Flask API with integrated ML services  
 - **Database**: PostgreSQL
 - **Storage**: MinIO (S3-compatible)
-- **AI Runtime**: Ollama (with OpenAI as alternative)
+- **AI Runtime**: Ollama (auto-detects host vs container)
 
 ## 🚀 Quick Start
 
@@ -16,45 +16,69 @@ This is a local development version of AIGoat that runs entirely on your local m
 
 - Docker and Docker Compose
 - At least 4GB RAM available
-- 10GB free disk space (for AI models)
+- 10GB free disk space (for AI models if using container mode)
 
-### 1. Setup Environment
+### 1. One-Command Startup (Recommended)
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd AIGoat
+# Clone and start with smart detection
+git clone https://github.com/aligorithm/AIGoat-local.git
+cd AIGoat-local
+./start-aigoat.sh
+```
 
+The script will:
+- ✅ **Auto-detect** if you have Ollama running locally
+- 🏠 **Host Mode**: Use your existing Ollama (faster, saves resources)
+- 🐳 **Container Mode**: Start Ollama in Docker if none detected
+- 📥 **Auto-install** required models if missing
+
+### 2. Manual Setup
+
+```bash
 # Copy environment file
 cp env.example .env
 
-# Edit .env file with your preferences (optional)
-# Default settings work out of the box
-```
-
-### 2. Start All Services
-
-```bash
-# Start the entire stack
+# Option A: Use host Ollama (if you have it installed)
 docker-compose up -d
 
-# View logs
-docker-compose logs -f
+# Option B: Use container Ollama (downloads models)
+docker-compose --profile container-ollama up -d
 ```
 
-### 3. Wait for Initialization
-
-The first startup will take several minutes as it:
-- Downloads AI models (llava ~4GB, llama3.1 ~5GB)
-- Initializes the database
-- Sets up storage buckets
-
-### 4. Access the Application
+### 3. Access the Application
 
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:5000
 - **MinIO Console**: http://localhost:9001 (admin/admin)
 - **Ollama API**: http://localhost:11434
+
+## 🤖 Ollama Modes
+
+### Host Mode (Recommended)
+- **When**: You have Ollama installed on your system
+- **Benefits**: Faster startup, less resource usage, persistent models
+- **How**: Automatically detected by `start-aigoat.sh` or use `docker-compose up -d`
+
+### Container Mode
+- **When**: No local Ollama installation
+- **Benefits**: Everything in containers, no host dependencies
+- **How**: Use `docker-compose --profile container-ollama up -d`
+- **Note**: First run downloads ~9GB of models
+
+### Manual Mode Switching
+
+```bash
+# Force container mode even if host Ollama exists
+docker-compose --profile container-ollama up -d
+
+# Switch back to host mode
+docker-compose down
+docker-compose up -d
+
+# Check current mode
+docker-compose ps
+```
 
 ## 🔧 Configuration
 
@@ -69,6 +93,16 @@ AI_PROVIDER=ollama
 # Or use OpenAI
 AI_PROVIDER=openai
 OPENAI_API_KEY=your-api-key-here
+```
+
+### Ollama Endpoint Configuration
+
+```bash
+# Host mode (default)
+OLLAMA_ENDPOINT=http://host.docker.internal:11434
+
+# Container mode
+OLLAMA_ENDPOINT=http://ollama:11434
 ```
 
 ### Model Configuration
@@ -129,7 +163,7 @@ docker-compose logs -f
 # Specific service
 docker-compose logs -f backend
 docker-compose logs -f frontend
-docker-compose logs -f ollama
+docker-compose logs -f ollama  # Only in container mode
 ```
 
 ### Database Access
@@ -149,6 +183,17 @@ docker-compose exec postgres psql -U pos_user -d postgres
 
 ### Common Issues
 
+**Port 11434 already in use:**
+```bash
+# Check what's using the port
+sudo lsof -i :11434
+
+# If it's host Ollama, use host mode (default)
+docker-compose up -d
+
+# If it's something else, stop it or use different port
+```
+
 **Services won't start:**
 ```bash
 # Check system resources
@@ -160,7 +205,7 @@ docker-compose down
 docker-compose up -d
 ```
 
-**Models not downloading:**
+**Models not downloading (container mode):**
 ```bash
 # Check Ollama logs
 docker-compose logs ollama-init
@@ -194,12 +239,56 @@ curl http://localhost:11434/api/tags
 ### Performance Issues
 
 **High RAM usage:**
-- Ollama models use 2-6GB RAM each
-- Consider using smaller models or OpenAI API
+- Container mode: Ollama models use 2-6GB RAM each
+- Host mode: Uses your existing Ollama installation
+- Consider using OpenAI API for lower resource usage
 
 **Slow responses:**
 - First AI requests are slower (model loading)
 - Subsequent requests should be faster
+- Host mode is generally faster than container mode
+
+## 📋 Command Reference
+
+### Startup Commands
+```bash
+# Smart startup (recommended)
+./start-aigoat.sh
+
+# Manual host mode
+docker-compose up -d
+
+# Manual container mode
+docker-compose --profile container-ollama up -d
+
+# Stop everything
+docker-compose down
+```
+
+### Mode Detection
+```bash
+# Check if Ollama is running locally
+curl http://localhost:11434/api/tags
+
+# Check current Docker mode
+docker-compose ps
+
+# Check Ollama models
+ollama list  # Host mode
+docker-compose exec ollama ollama list  # Container mode
+```
+
+### Development Commands
+```bash
+# Rebuild containers
+docker-compose up --build -d
+
+# View live logs
+docker-compose logs -f
+
+# Reset everything (⚠️ deletes data)
+docker-compose down -v
+```
 
 ## 📦 Production Deployment
 
@@ -246,18 +335,20 @@ docker-compose down --rmi all
 
 ## 📝 Notes
 
-- This setup is designed for local learning and testing
-- The vulnerabilities are intentionally preserved for educational purposes
-- For production use, additional security measures should be implemented
-- AI model responses may vary based on the provider and model used
+- **Smart Detection**: Automatically chooses host vs container Ollama
+- **Resource Friendly**: Host mode saves RAM and disk space
+- **No Vendor Lock-in**: Easy switching between Ollama and OpenAI
+- **Educational Focus**: Preserves all security vulnerabilities for learning
+- **Production Ready**: Can be adapted for production deployment
 
 ## 🆘 Support
 
 If you encounter issues:
 
-1. Check the logs: `docker-compose logs -f`
-2. Verify system requirements (RAM, disk space)
-3. Ensure all environment variables are set correctly
-4. Try restarting: `docker-compose restart`
+1. **Try the smart startup**: `./start-aigoat.sh`
+2. **Check the logs**: `docker-compose logs -f`
+3. **Verify system requirements** (RAM, disk space)
+4. **Ensure ports are available** (3000, 5000, 9000, 9001, 11434)
+5. **Try container mode** if host mode fails
 
 For more help, refer to the original AIGoat documentation or create an issue in the repository. 

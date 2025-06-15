@@ -38,10 +38,11 @@ services:
       timeout: 20s
       retries: 3
 
-  # Ollama AI Runtime
+  # Ollama AI Runtime (Container Mode) - only runs with --profile container-ollama
   ollama:
     image: ollama/ollama
     container_name: aigoat-ollama
+    profiles: ["container-ollama"]
     ports:
       - "11434:11434"
     volumes:
@@ -54,10 +55,11 @@ services:
       timeout: 10s
       retries: 5
 
-  # Model initialization service
+  # Model initialization service (Container Mode) - only runs with --profile container-ollama
   ollama-init:
     image: ollama/ollama
     container_name: aigoat-ollama-init
+    profiles: ["container-ollama"]
     depends_on:
       ollama:
         condition: service_healthy
@@ -74,12 +76,47 @@ services:
       "
     restart: "no"
 
-  # Flask Backend
+  # Flask Backend (Host Ollama Mode - Default)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: aigoat-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - DATABASE_URL=postgresql://pos_user:password123@postgres:5432/postgres
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://host.docker.internal:11434}
+      - AI_PROVIDER=ollama
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Flask Backend (Container Ollama Mode) - only runs with --profile container-ollama
+  backend-container-ollama:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: aigoat-backend
+    profiles: ["container-ollama"]
     ports:
       - "5000:5000"
     volumes:
@@ -125,8 +162,7 @@ services:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:5000
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
 
 volumes:
   postgres_data:
